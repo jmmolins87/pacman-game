@@ -17,7 +17,7 @@
 
 ## Reglas del grid
 
-- Valores de celda: `0` vacío, `1` pared, `2` dot, `3` puerta de la pen. La puerta (`3`) bloquea a Pac-Man pero NO a los fantasmas.
+- Valores de celda: `0` vacío, `1` pared, `2` dot, `3` puerta de la pen. La puerta (`3`) bloquea a todos los actores en `canMove`; los fantasmas solo la cruzan mediante la ruta guionizada de salida (`moveExiting`, que no consulta paredes).
 - `MAZE` es pristino e inmutable: `createGame()` lo copia a `game.grid`, que es lo único que se muta (dots comidos). Render usa `game.grid`, nunca `MAZE`.
 - Laberinto 28x31; el túnel es la fila 14 (wrap horizontal al salir por un borde).
 
