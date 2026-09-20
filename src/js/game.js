@@ -143,6 +143,8 @@ function movePacman( game ) {
 //   inky:   2 * (Pac-Man + 2 celdas en su direccion) - celda de Blinky.
 //   clyde:  Pac-Man de lejos; esquina inferior izquierda ({x:1,y:29}) de cerca.
 function ghostTarget( game, g ) {
+  // Los ojos apuntan a la celda sobre la puerta para volver a entrar.
+  if ( g.mode === 'eaten' ) return { x: 13, y: 11 };
   const p = game.pacman;
   const px = Math.round( p.x );
   const py = Math.round( p.y );
@@ -228,6 +230,28 @@ function moveExiting( g ) {
   }
 }
 
+// Regreso guionizado a la pen (espejo de moveExiting): alinearse a la
+// columna de la puerta (x=13) y bajar de y=11 a y=14, ya dentro. No
+// consulta paredes: es el cruce guionizado de la puerta hacia dentro.
+function moveEntering( game, g ) {
+  const step = g.speed;
+  if ( Math.abs( g.x - 13 ) > step / 2 ) {
+    g.dir = g.x < 13 ? 'right' : 'left';
+    g.x += g.x < 13 ? step : -step;
+    if ( Math.abs( g.x - 13 ) <= step / 2 ) g.x = 13;
+    return;
+  }
+  g.x = 13;
+  g.dir = 'down';
+  g.y += step;
+  if ( g.y >= 14 ) {
+    g.y = 14;
+    g.mode = 'pen';
+    g.releaseAt = game.frame + PEN_REDELAY;
+    g.dir = 'up';
+  }
+}
+
 function moveGhost( game, g ) {
   // En la pen esperan quietos hasta su frame de salida.
   if ( g.mode === 'pen' ) {
@@ -236,6 +260,23 @@ function moveGhost( game, g ) {
   }
   if ( g.mode === 'exiting' ) {
     moveExiting( g );
+    return;
+  }
+  // Ojos: navegan con la IA greedy hacia (13,11). Captura amplia en la
+  // fila 11 para que la prohibicion de reversa no los haga oscilar junto
+  // a la puerta sin entrar nunca.
+  if ( g.mode === 'eaten' ) {
+    if ( aligned( g.x ) && aligned( g.y ) ) {
+      g.x = Math.round( g.x );
+      g.y = Math.round( g.y );
+      if ( g.y === 11 && Math.abs( g.x - 13 ) <= 1 ) {
+        g.mode = 'entering';
+        return;
+      }
+    }
+  }
+  if ( g.mode === 'entering' ) {
+    moveEntering( game, g );
     return;
   }
 
@@ -302,15 +343,29 @@ function update( game ) {
   game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
 
   for ( const g of game.ghosts ) {
-    if ( collides( game.pacman, g ) ) {
-      game.lives--;
-      if ( game.lives <= 0 ) {
-        game.state = 'lost';
-        return;
-      }
-      resetPositions( game );
-      break;
+    if ( !collides( game.pacman, g ) ) continue;
+    // Ojos, entrando o en la pen: sin interaccion (los ojos cruzan).
+    if ( g.mode === 'pen' || g.mode === 'eaten' || g.mode === 'entering' ) continue;
+    // Asustado: comer con cadena 200/400/800/1600 y pasa a ojos. El
+    // redondeo a celda evita offsets que jamas realinean al cambiar de
+    // velocidad (0.05 -> 0.25).
+    if ( g.frightened ) {
+      game.score += GHOST_POINTS[ game.eatChain ];
+      game.eatChain = Math.min( game.eatChain + 1, 3 );
+      g.frightened = false;
+      g.mode = 'eaten';
+      g.x = Math.round( g.x );
+      g.y = Math.round( g.y );
+      continue;
     }
+    // Activo o saliendo normal: perder vida (como siempre).
+    game.lives--;
+    if ( game.lives <= 0 ) {
+      game.state = 'lost';
+      return;
+    }
+    resetPositions( game );
+    break;
   }
 
   if ( game.dotsRemaining <= 0 ) game.state = 'won';
