@@ -176,6 +176,12 @@ function decideGhost( game, g ) {
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
 
+  // Asustado: rumbo aleatorio entre las choices (misma sin-reversa).
+  if ( g.frightened ) {
+    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
+    return;
+  }
+
   // Todas las personalidades eligen la direccion valida (sin reversa) que
   // minimice la distancia Manhattan al objetivo.
   const target = ghostTarget( game, g );
@@ -194,11 +200,18 @@ function decideGhost( game, g ) {
   g.dir = best;
 }
 
+// Velocidad efectiva: ojos rapido, asustado lento, resto normal.
+function ghostSpeed( g ) {
+  if ( g.mode === 'eaten' ) return EYES_SPEED;
+  if ( g.frightened ) return FRIGHT_SPEED;
+  return g.speed;
+}
+
 // Salida guionizada de la pen: alinearse a la columna de la puerta (x=13)
 // y subir hasta (13,11), ya fuera. Evita que la IA greedy decida dentro de
 // la guarida, donde puede estancarse.
 function moveExiting( g ) {
-  const step = g.speed;
+  const step = ghostSpeed( g );
   if ( Math.abs( g.x - 13 ) > step / 2 ) {
     g.dir = g.x < 13 ? 'right' : 'left';
     g.x += g.x < 13 ? step : -step;
@@ -237,8 +250,9 @@ function moveGhost( game, g ) {
   }
 
   const d = DIRS[ g.dir ];
-  g.x += d.x * g.speed;
-  g.y += d.y * g.speed;
+  const step = ghostSpeed( g );
+  g.x += d.x * step;
+  g.y += d.y * step;
   wrapTunnel( g, width );
 }
 

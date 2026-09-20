@@ -165,7 +165,15 @@ function draw( ctx, game, frame ) {
   drawDoor( ctx, grid );
   drawDots( ctx, grid );
   drawPacman( ctx, game.pacman, frame );
-  game.ghosts.forEach( ( g ) => drawGhost( ctx, g, GHOST_COLORS[ g.kind ] || '#ff0000' ) );
+  game.ghosts.forEach( ( g ) => {
+    let color = GHOST_COLORS[ g.kind ] || '#ff0000';
+    if ( g.frightened ) {
+      const left = game.frightUntil - game.frame;
+      color = ( left <= FRIGHT_FLASH && Math.floor( frame / 8 ) % 2 === 0 )
+        ? '#fff' : '#2121de';
+    }
+    drawGhost( ctx, g, color );
+  } );
   drawHUD( ctx, game, W );
 }
 
