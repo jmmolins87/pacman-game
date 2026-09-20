@@ -13,6 +13,14 @@ const OPPOSITE = { left: 'right', right: 'left', up: 'down', down: 'up' };
 const PACMAN_SPEED = 0.125; // 1/8 celda/frame -> alinea cada 8 frames
 const GHOST_SPEED = 0.1;    // 1/10 celda/frame
 
+// Modo asustado (frames a ~60 fps, como releaseDelay).
+const FRIGHT_FRAMES = 360;  // ~6 s de modo asustado
+const FRIGHT_FLASH = 120;   // ~2 s de parpadeo de aviso al final
+const FRIGHT_SPEED = 0.05;  // mitad de GHOST_SPEED (1/20 celda/frame)
+const EYES_SPEED = 0.25;    // 2.5x: los ojos vuelven rapido (1/4)
+const PEN_REDELAY = 60;     // ~1 s en la guarida antes de re-salir
+const GHOST_POINTS = [ 200, 400, 800, 1600 ]; // cadena por pellet
+
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
 // dots sin destruir el original, y reiniciar.
 function createGame() {
@@ -29,6 +37,8 @@ function createGame() {
     lives: 3,
     dotsRemaining: dots,
     frame: 0,
+    frightUntil: 0, // frame de fin del modo; 0 = inactivo
+    eatChain: 0,    // fantasmas comidos desde el ultimo pellet
     grid,
     pacman: {
       x: PACMAN_START.x,
@@ -43,6 +53,7 @@ function createGame() {
       dir: 'up',
       speed: GHOST_SPEED,
       kind: g.kind,
+      frightened: false,
       // Blinky nace fuera (activo); el resto espera en la pen.
       mode: g.releaseDelay === 0 ? 'active' : 'pen',
       releaseDelay: g.releaseDelay,
@@ -99,12 +110,21 @@ function movePacman( game ) {
       p.dir = p.nextDir;
       p.nextDir = null;
     }
-    // Comer dot (10) o power pellet (50).
+    // Comer dot (10) o power pellet (50). El pellet ademas dispara el
+    // modo asustado: reinicia temporizador y cadena, y asusta a todos
+    // los no comidos (los ojos que vuelven no son azules ni comestibles).
     const v = grid[ p.y ][ p.x ];
     if ( v === 2 || v === 4 ) {
       grid[ p.y ][ p.x ] = 0;
       game.score += v === 2 ? 10 : 50;
       game.dotsRemaining--;
+      if ( v === 4 ) {
+        game.frightUntil = game.frame + FRIGHT_FRAMES;
+        game.eatChain = 0;
+        game.ghosts.forEach( ( g ) => {
+          if ( g.mode !== 'eaten' && g.mode !== 'entering' ) g.frightened = true;
+        } );
+      }
     }
     // Si no puede seguir, se detiene en la celda.
     if ( !canMove( grid, p.x, p.y, p.dir ) ) return;
@@ -228,10 +248,14 @@ function resetPositions( game ) {
   p.y = PACMAN_START.y;
   p.dir = 'left';
   p.nextDir = null;
+  // Perder una vida limpia el modo asustado: nadie azul tras el reset.
+  game.frightUntil = 0;
+  game.eatChain = 0;
   game.ghosts.forEach( ( g, i ) => {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
     g.dir = 'up';
+    g.frightened = false;
     // Vuelven a la guarida y se reescalonan las salidas desde ahora.
     g.mode = GHOST_STARTS[ i ].releaseDelay === 0 ? 'active' : 'pen';
     g.releaseAt = game.frame + GHOST_STARTS[ i ].releaseDelay;
@@ -246,6 +270,20 @@ function update( game ) {
   // Contador de frames de juego: solo avanza con la partida en marcha
   // (update solo se llama con state === 'playing').
   game.frame++;
+  // Expiracion del modo asustado al inicio, antes de mover. Cambiar de
+  // velocidad a mitad de celda deja offsets que jamas vuelven a alinear,
+  // asi que los asustados 'active' se redondean a celda.
+  if ( game.frightUntil && game.frame >= game.frightUntil ) {
+    game.frightUntil = 0;
+    game.eatChain = 0;
+    game.ghosts.forEach( ( g ) => {
+      g.frightened = false;
+      if ( g.mode === 'active' ) {
+        g.x = Math.round( g.x );
+        g.y = Math.round( g.y );
+      }
+    } );
+  }
   movePacman( game );
   game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
 
