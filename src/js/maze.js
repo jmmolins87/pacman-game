@@ -51,9 +51,14 @@ const MAZE = MAZE_STR.map( ( row ) => row.split( '' ).map( parseTile ) );
 
 const TUNNEL_ROW = 14;
 const PACMAN_START = { x: 13, y: 23 };
+// Cuatro fantasmas clasicos: Blinky nace fuera, sobre la puerta; el resto
+// espera dentro de la pen y sale de forma escalonada (releaseDelay en frames
+// de juego, asumiendo ~60 fps: 0 / ~2 s / ~5 s / ~8 s).
 const GHOST_STARTS = [
-  { x: 13, y: 14, kind: 'hunter' }, // dentro de la pen
-  { x: 14, y: 14, kind: 'random' }, // dentro de la pen
+  { x: 13, y: 11, kind: 'blinky', releaseDelay: 0 },   // fuera, sobre la puerta
+  { x: 13, y: 14, kind: 'pinky', releaseDelay: 120 },  // ~2 s
+  { x: 12, y: 14, kind: 'inky', releaseDelay: 300 },   // ~5 s
+  { x: 15, y: 14, kind: 'clyde', releaseDelay: 480 },  // ~8 s
 ];
 
 window.MAZE = MAZE;

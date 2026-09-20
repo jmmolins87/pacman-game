@@ -28,6 +28,7 @@ function createGame() {
     score: 0,
     lives: 3,
     dotsRemaining: dots,
+    frame: 0,
     grid,
     pacman: {
       x: PACMAN_START.x,
@@ -42,6 +43,10 @@ function createGame() {
       dir: 'up',
       speed: GHOST_SPEED,
       kind: g.kind,
+      // Blinky nace fuera (activo); el resto espera en la pen.
+      mode: g.releaseDelay === 0 ? 'active' : 'pen',
+      releaseDelay: g.releaseDelay,
+      releaseAt: g.releaseDelay,
     } ) ),
   };
 }
@@ -110,9 +115,39 @@ function movePacman( game ) {
   wrapTunnel( p, width );
 }
 
+// Celda objetivo de cada personalidad (puede caer en muro: es solo diana
+// de distancia para la persecucion greedy).
+//   blinky: celda de Pac-Man.
+//   pinky:  celda de Pac-Man + 4 celdas en su direccion.
+//   inky:   2 * (Pac-Man + 2 celdas en su direccion) - celda de Blinky.
+//   clyde:  Pac-Man de lejos; esquina inferior izquierda ({x:1,y:29}) de cerca.
+function ghostTarget( game, g ) {
+  const p = game.pacman;
+  const px = Math.round( p.x );
+  const py = Math.round( p.y );
+  const d = DIRS[ p.dir ] || { x: 0, y: 0 };
+
+  if ( g.kind === 'pinky' ) {
+    return { x: px + 4 * d.x, y: py + 4 * d.y };
+  }
+  if ( g.kind === 'inky' ) {
+    const blinky = game.ghosts.find( ( o ) => o.kind === 'blinky' );
+    const bx = blinky ? Math.round( blinky.x ) : px;
+    const by = blinky ? Math.round( blinky.y ) : py;
+    const ax = px + 2 * d.x;
+    const ay = py + 2 * d.y;
+    return { x: 2 * ax - bx, y: 2 * ay - by };
+  }
+  if ( g.kind === 'clyde' ) {
+    const dist = Math.abs( Math.round( g.x ) - px ) + Math.abs( Math.round( g.y ) - py );
+    if ( dist > 8 ) return { x: px, y: py };
+    return { x: 1, y: 29 };
+  }
+  return { x: px, y: py };
+}
+
 function decideGhost( game, g ) {
   const grid = game.grid;
-  const p = game.pacman;
 
   const options = Object.keys( DIRS ).filter(
     ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir, 'ghost' )
@@ -120,28 +155,56 @@ function decideGhost( game, g ) {
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
 
-  if ( g.kind === 'hunter' ) {
-    const px = Math.round( p.x );
-    const py = Math.round( p.y );
-    let best = choices[ 0 ];
-    let bestDist = Infinity;
-    for ( const dir of choices ) {
-      const d = DIRS[ dir ];
-      const nx = g.x + d.x;
-      const ny = g.y + d.y;
-      const dist = Math.abs( nx - px ) + Math.abs( ny - py );
-      if ( dist < bestDist ) {
-        bestDist = dist;
-        best = dir;
-      }
+  // Todas las personalidades eligen la direccion valida (sin reversa) que
+  // minimice la distancia Manhattan al objetivo.
+  const target = ghostTarget( game, g );
+  let best = choices[ 0 ];
+  let bestDist = Infinity;
+  for ( const dir of choices ) {
+    const d = DIRS[ dir ];
+    const nx = g.x + d.x;
+    const ny = g.y + d.y;
+    const dist = Math.abs( nx - target.x ) + Math.abs( ny - target.y );
+    if ( dist < bestDist ) {
+      bestDist = dist;
+      best = dir;
     }
-    g.dir = best;
-  } else {
-    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
+  }
+  g.dir = best;
+}
+
+// Salida guionizada de la pen: alinearse a la columna de la puerta (x=13)
+// y subir hasta (13,11), ya fuera. Evita que la IA greedy decida dentro de
+// la guarida, donde puede estancarse.
+function moveExiting( g ) {
+  const step = g.speed;
+  if ( Math.abs( g.x - 13 ) > step / 2 ) {
+    g.dir = g.x < 13 ? 'right' : 'left';
+    g.x += g.x < 13 ? step : -step;
+    if ( Math.abs( g.x - 13 ) <= step / 2 ) g.x = 13;
+    return;
+  }
+  g.x = 13;
+  g.dir = 'up';
+  g.y -= step;
+  if ( g.y <= 11 ) {
+    g.y = 11;
+    g.mode = 'active';
+    g.dir = 'left';
   }
 }
 
 function moveGhost( game, g ) {
+  // En la pen esperan quietos hasta su frame de salida.
+  if ( g.mode === 'pen' ) {
+    if ( game.frame >= g.releaseAt ) g.mode = 'exiting';
+    else return;
+  }
+  if ( g.mode === 'exiting' ) {
+    moveExiting( g );
+    return;
+  }
+
   const grid = game.grid;
   const width = grid[ 0 ].length;
 
@@ -168,6 +231,9 @@ function resetPositions( game ) {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
     g.dir = 'up';
+    // Vuelven a la guarida y se reescalonan las salidas desde ahora.
+    g.mode = GHOST_STARTS[ i ].releaseDelay === 0 ? 'active' : 'pen';
+    g.releaseAt = game.frame + GHOST_STARTS[ i ].releaseDelay;
   } );
 }
 
@@ -176,6 +242,9 @@ function collides( a, b ) {
 }
 
 function update( game ) {
+  // Contador de frames de juego: solo avanza con la partida en marcha
+  // (update solo se llama con state === 'playing').
+  game.frame++;
   movePacman( game );
   game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
 
@@ -196,4 +265,5 @@ function update( game ) {
 
 window.createGame = createGame;
 window.update = update;
+window.ghostTarget = ghostTarget;
 window.DIRS = DIRS;
