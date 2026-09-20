@@ -67,14 +67,14 @@ function aligned( v ) {
 }
 
 // Una celda es muro? Pared (1) y puerta (3) bloquean a todos los actores;
-// la puerta solo se cruza con la ruta guionizada de salida (moveExiting,
-// que no consulta paredes).
+// la puerta solo se cruza con rutas guionizadas que no consultan paredes:
+// salida (moveExiting) y regreso del comido ('entering' via moveEntering).
 function isWall( grid, x, y ) {
   if ( y < 0 || y >= grid.length ) return true;
   if ( x < 0 || x >= grid[ 0 ].length ) return true;
   const v = grid[ y ][ x ];
   if ( v === 1 ) return true;
-  if ( v === 3 ) return true; // puerta: pared para la IA; solo se cruza guionizado (moveExiting)
+  if ( v === 3 ) return true; // puerta: pared para la IA; solo se cruza guionizado (moveExiting/moveEntering)
   return false;
 }
 
